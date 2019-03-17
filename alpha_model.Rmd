@@ -1,0 +1,147 @@
+---
+title: "alpha_model"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(pacman)
+p_load(tidyverse, ggunchained)
+```
+
+Alpha version of the fashionably late model
+
+Function takes
+tmax = number of rounds to run
+n_player = number of players to include in each game
+
+
+# function with a function for counting scores
+# NOT WORKING
+
+```{r}
+late_alpha <- function(tmax, n_player) {
+  
+  # setting up the placeholder tibble
+  game <- as_tibble(matrix(NA, 
+                           tmax * n_player, # nrow = X number of rounds for each player
+                           6)) # variables
+  
+  colnames(game) <- c("ID", "round", 
+                      "late_fear", "wait_fear", 
+                      "arrival", "score")
+  
+  
+  # random variables
+  late_fear_vector = abs(rnorm(n_player, 0, 2))
+  wait_fear_vector = abs(rnorm(n_player, 0, 2))
+  arrival_vector = round(rnorm(n_player*tmax, -10, 10), 0)
+  
+  
+  # function for computing score
+  count_score <- function(C_late_fear, C_wait_fear, C_arrival) {
+    
+    # if agent arrived on time
+    if(C_arrival <= 0 ) {
+      score = abs(C_arrival) * C_wait_fear
+    }
+    
+    # if agent arrived late
+    if(C_arrival > 0) {
+      score = C_arrival * C_late_fear
+    }
+    
+    return(score)
+    
+  }
+  
+  
+  # filling the tibble with data
+  game <<- game %>%
+    mutate(ID = rep(seq(1, n_player, 1), tmax),
+           round = rep(1:tmax, each = n_player),
+           late_fear = rep(late_fear_vector, tmax),
+           wait_fear = rep(wait_fear_vector, tmax),
+           arrival = arrival_vector,
+           score = count_score(late_fear, wait_fear, arrival))
+}
+```
+
+# case_when version
+# WORKING
+```{r}
+late_alpha <- function(tmax, n_player) {
+  
+  # setting up the placeholder tibble
+  game <- as_tibble(matrix(NA, 
+                           tmax * n_player, # nrow = X number of rounds for each player
+                           6)) # variables
+  
+  colnames(game) <- c("ID", "round", 
+                      "late_fear", "wait_fear", 
+                      "arrival", "score")
+  
+  
+  # random variables
+  late_fear_vector = abs(rnorm(n_player, 0, 2))
+  wait_fear_vector = abs(rnorm(n_player, 0, 2))
+  arrival_vector = round(rnorm(n_player*tmax, -10, 10), 0)
+  
+  
+  # filling the tibble with data
+  game <- game %>%
+    mutate(ID = rep(seq(1, n_player, 1), tmax),
+           round = rep(1:tmax, each = n_player),
+           late_fear = rep(late_fear_vector, tmax),
+           wait_fear = rep(wait_fear_vector, tmax),
+           arrival = arrival_vector,
+           score = case_when(arrival <= 0 ~ abs(arrival) * wait_fear,
+                             arrival > 0 ~ abs(arrival) * late_fear))
+  
+  return(game)
+}
+```
+
+# RUNNING
+```{r}
+d <- late_alpha(tmax = 500, n_player = 30)
+
+score_sum <- d %>%
+  group_by(ID, wait_fear, late_fear) %>%
+  summarise(total_score = sum(score))
+
+score_rounds <- d %>%
+  group_by(ID) %>%
+  mutate(csum = cumsum(score))
+```
+
+# PLOTTING
+```{r}
+# score development and strategy
+score_rounds %>%
+  mutate(afraid_waiting = ifelse(wait_fear >= mean(.$wait_fear), 1, 0),
+         afraid_late = ifelse(late_fear >= mean(.$late_fear), 1, 0),
+         strategy = paste0(afraid_waiting, afraid_late)) %>%
+  ggplot(aes(round, csum, color = factor(strategy))) +
+  geom_point() +
+  theme_janco_point() +
+  labs(title = "Being late game",
+       subtitle = "Development of score",
+       color = "fear {wait, late}")
+
+# score development and punctuality
+score_rounds %>%
+   mutate(afraid_waiting = ifelse(wait_fear >= mean(.$wait_fear), 1, 0),
+         afraid_late = ifelse(late_fear >= mean(.$late_fear), 1, 0),
+         strategy = paste0(afraid_waiting, afraid_late),
+         punctual = ifelse(arrival <= 0, 0, 1)) %>%
+  ggplot(aes(strategy, score, fill = factor(punctual))) +
+  geom_split_violin(scale = "width") +
+  theme_janco_bar() +
+  labs(title = "Being late game",
+       x = "fear {wait, late}",
+       subtitle = "How being late affects different strategies",
+       fill = "arrived late")
+```
+
